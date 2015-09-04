@@ -1,6 +1,6 @@
 # Altered `NodeList.js`
 
-To learn how `NodeList.js` fully works check out the [original REPO](https://github.com/eorroe/NodeList.js)
+To learn how `NodeList.js` fully works check out the [Original Repository](https://github.com/eorroe/NodeList.js)
 
 This altered version uses the methods:
 
