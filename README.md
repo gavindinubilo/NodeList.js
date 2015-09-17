@@ -9,4 +9,4 @@ This altered version uses the methods:
 3. `document.getElementsByClassName`
 4. `document.getElementsByTagName`
 
-Over the `NodeList.js` original method `$$`.
+Over the `NodeList.js` original method `$$`
