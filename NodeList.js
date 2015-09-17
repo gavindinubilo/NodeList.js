@@ -3,20 +3,29 @@
 		var elms = [];
 		for(var i = 0, l = arr.length; i < l; i++) {
 			var el = arr[i];
-			if(el instanceof Node) {
+			if(el instanceof Node || el === null || el === undefined) {
 				elms.push(el);
-			} else if(el instanceof NodeList || el instanceof HTMLCollection || el instanceof Array) {
-				elms = elms.concat(flatten(el));
+			} else if(el instanceof window.NodeList || el instanceof HTMLCollection || el instanceof Array) {
+				elms = NL.concat(flatten(el));
 			} else {
 				arr.get = NL.get, arr.set = NL.set, arr.call = NL.call, arr.owner = owner;
 				return arr;
 			}
 		}
-		elms.__proto__ = NL, elms.owner = owner;
-		return elms;
+		return new NodeList(elms, owner);
 	}
 
-	var NL = {
+	function NodeList(selector, scope) {
+		if(typeof selector === 'string') {
+			var nodes = (scope || document).querySelectorAll(selector);
+			for(var i = 0, l = this.length = nodes.length; i < l; i++) this[i] = nodes[i];
+		} else if(selector instanceof Array || selector instanceof NodeList) {
+			for(var i = 0, l = this.length = selector.length; i < l; i++) this[i] = selector[i];
+			if(scope) this.owner = scope;
+		}
+	}
+
+	var NL = NodeList.prototype = {
 		includes: Array.prototype.includes || function includes(element, index) {
 			return this.indexOf(element, index) > -1;
 		},
@@ -40,8 +49,7 @@
 			if(typeof amount !== "number") amount = 1;
 			var nodes = [], pop = Array.prototype.pop.bind(this);
 			for(var i = 0; i < amount; i++) nodes.push(pop());
-			nodes.__proto__ = NL, nodes.owner = this;
-			return nodes;
+			return new NodeList(nodes, this);
 		},
 
 		unshift: function unshift() {
@@ -58,8 +66,7 @@
 			if(typeof amount !== "number") amount = 1;
 			var nodes = [], shift = Array.prototype.shift.bind(this);
 			for(var i = 0; i < amount; i++) nodes.push(shift());
-			nodes.__proto__ = NL, nodes.owner = this;
-			return nodes;
+			return new NodeList(nodes, this);
 		},
 
 		splice: function splice() {
@@ -67,28 +74,21 @@
 				if(!(arguments[i] instanceof Node)) throw Error('Passed arguments must be a Node');
 			}
 			var nodes = Array.prototype.splice.apply(this, arguments);
-			nodes.__proto__ = NL, nodes.owner = this;
-			return nodes;
+			return new NodeList(nodes, this);
 		},
 
 		slice: function slice() {
 			var nodes = Array.prototype.slice.apply(this, arguments);
-			nodes.__proto__ = NL, nodes.owner = this;
-			return nodes;
+			return new NodeList(nodes, this);
 		},
 
 		filter: function filter() {
 			var nodes = Array.prototype.filter.apply(this, arguments);
-			nodes.__proto__ = NL, nodes.owner = this;
-			return nodes;
+			return new NodeList(nodes, this);
 		},
 
 		map: function map(cb, context) {
-			var mapped = [];
-			for(var i = 0, l = this.length; i < l; i++) {
-				var funcCall = cb.call(context, this[i], i, this);
-				mapped.push(funcCall);
-			}
+			var mapped = Array.prototype.map.apply(this, arguments);
 			return flatten(mapped, this);
 		},
 
@@ -98,7 +98,7 @@
 				var arg = arguments[i];
 				if(arg instanceof Node) {
 					if(nodes.indexOf(arg) === -1) nodes.push(arg);
-				} else if(arg instanceof NodeList || arg instanceof HTMLCollection || arg instanceof Array || arg.__proto__ === NL) {
+				} else if(arg instanceof window.NodeList || arg instanceof HTMLCollection || arg instanceof Array || arg instanceof NodeList) {
 					nodes = nodes.concat.apply(nodes, arg);
 				} else {
 					throw Error('Concat only takes a Node, NodeList, HTMLCollection, or Array of (Node, NodeList, HTMLCollection, Array)');
@@ -111,49 +111,54 @@
 		get: function get(prop) {
 			var arr = [];
 			for(var i = 0, l = this.length; i < l; i++) {
-				var item = this[i][prop];
-				if(item instanceof Node && (arr.indexOf(item) !== -1)) continue;
+				var el = this[i];
+				if(el === null || el === undefined) {
+					arr.push(el); continue;
+				}
+				var item = el[prop];
+				if(item instanceof Node && arr.indexOf(item) !== -1) continue;
 				arr.push(item);
 			}
 			return flatten(arr, this);
 		},
 
-		set: function set(prop, value, checkExistence) {
+		set: function set(prop, value) {
 			if(prop.constructor === Object) {
 				for(var i = 0, l = this.length; i < l; i++) {
-					var element = this[i];
-					for(var key in prop) {
-						if(element[key] !== undefined) element[key] = prop[key];
+					var el = this[i];
+					if(el) {
+						for(var key in prop) {
+							if(el[key] !== undefined) el[key] = prop[key];
+						}
 					}
 				}
-			} else if(checkExistence) {
-				for(var i = 0, l = this.length; i < l; i++) {
-					var element = this[i];
-					if(element[prop] !== undefined) element[prop] = value;
-				}
 			} else {
-				for(var i = 0, l = this.length; i < l; i++) this[i][prop] = value;
+				for(var i = 0, l = this.length; i < l; i++) {
+					var el = this[i];
+					if(el && el[prop] !== undefined) el[prop] = value;
+				}
 			}
 			return this;
 		},
 
 		call: function call() {
-			var arr = [], nodes = [], method = Array.prototype.shift.call(arguments);
+			var arr = [], nodes = [], method = Array.prototype.shift.call(arguments), arrLen = 0, nodesLen = 0;
 			for(var i = 0, l = this.length; i < l; i++) {
-				var element = this[i];
-				if(element[method] instanceof Function) {
-					var funcCall = element[method].apply(element, arguments);
+				var el = this[i];
+				if(el === null || el === undefined) {
+					arr.push(el), nodes.push(el);
+				} else if(el[method] instanceof Function) {
+					var funcCall = el[method].apply(el, arguments);
 					if(funcCall instanceof Node && nodes.indexOf(funcCall) === -1) {
-						nodes.push(funcCall);
+						nodesLen = nodes.push(funcCall);
 					} else if(funcCall !== undefined) {
-						arr.push(funcCall);
+						arrLen = arr.push(funcCall);
 					}
 				}
 			}
-			if(nodes[0]) {
-				nodes.__proto__ = NL, nodes.owner = this;
-				return nodes;
-			} else if(arr[0] !== undefined) {
+			if(nodesLen) {
+				return new NodeList(nodes, this);
+			} else if(arrLen) {
 				return flatten(arr, this);
 			}
 			return this;
@@ -161,8 +166,7 @@
 
 		item: function(index) {
 			var nodes = [this[index]];
-			nodes.__proto__ = NL, nodes.owner = this;
-			return nodes;
+			return new NodeList(nodes, this);
 		}
 	}
 
@@ -171,24 +175,28 @@
 		if(arrProps.indexOf(key) === -1 && NL[key] === undefined) NL[key] = Array.prototype[key];
 	});
 
-	if(Symbol && Symbol.iterator) NL[Symbol.iterator] = NL.values = Array.prototype[Symbol.iterator];
+	if(window.Symbol && window.Symbol.iterator) NL[window.Symbol.iterator] = NL.values = Array.prototype[window.Symbol.iterator];
 
 	function setterGetter(prop) {
 		if(div[prop] instanceof Function) {
 			NL[prop] = NL[prop] || function() {
-				var arr = [], nodes = [];
+				var arr = [], nodes = [], arrLen = 0, nodesLen = 0;
 				for(var i = 0, l = this.length; i < l; i++) {
-					var element = this[i], funcCall = element[prop].apply(element, arguments);
-					if(funcCall instanceof Node && nodes.indexOf(funcCall) === -1) {
-						nodes.push(funcCall);
-					} else if(funcCall !== undefined) {
-						arr.push(funcCall);
+					var el = this[i];
+					if(el === null || el === undefined) {
+						arr.push(el), nodes.push(el);
+					} else if(el[prop] instanceof Function) {
+						var funcCall = el[prop].apply(el, arguments);
+						if(funcCall instanceof Node && nodes.indexOf(funcCall) === -1) {
+							nodesLen = nodes.push(funcCall);
+						} else if(funcCall !== undefined) {
+							arrLen = arr.push(funcCall);
+						}
 					}
 				}
-				if(nodes[0]) {
-					nodes.__proto__ = NL, nodes.owner = this;
-					return nodes;
-				} else if(arr[0] !== undefined) {
+				if(nodesLen) {
+					return new NodeList(nodes, this);
+				} else if(arrLen) {
 					return flatten(arr, this);
 				}
 				return this;
@@ -198,14 +206,22 @@
 				get: function get() {
 					var arr = [];
 					for(var i = 0, l = this.length; i < l; i++) {
-						var item = this[i][prop];
+						var el = this[i];
+						if(el === null || el === undefined) {
+							arr.push(el);
+							continue;
+						}
+						var item = el[prop];
 						if(item instanceof Node && arr.indexOf(item) !== -1) continue;
 						arr.push(item);
 					}
 					return flatten(arr, this);
 				},
 				set: function(newVal) {
-					for(var i = 0, l = this.length; i < l; i++) this[i][prop] = newVal;
+					for(var i = 0, l = this.length; i < l; i++) {
+						var el = this[i];
+						if(el && el[prop] !== undefined) el[prop] = newVal;
+					}
 				}
 			});
 		}
@@ -213,11 +229,10 @@
 
 	var div = document.createElement('div');
 	for(var prop in div) setterGetter(prop);
-	arrProps = div = null;
-
-	var getters = [document.querySelectorAll, document.getElementsByName, document.getElementsByClassName, document.getElementsByTagName];
-
-	getters.forEach(function(getter) {
+	arrProps = div = prop = null;
+	
+	[document.querySelectorAll, document.getElementsByName, document.getElementsByClassName, document.getElementsByTagName]
+	.forEach(function(getter) {
 		var oldGetter = getter.bind(document);
 		document[getter.name] = function(selector) {
 			var nodes = oldGetter(selector), newNodes = [];
